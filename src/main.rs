@@ -1,5 +1,5 @@
 mod glyphy;
-use crate::glyphy::Glyphy;
+use crate::glyphy::{hex_str_to_normalized_rgba, Glyphy, TextRenderable};
 use std::error::Error;
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -79,7 +79,32 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .texture
                 .create_view(&wgpu::TextureViewDescriptor::default());
 
-            glyphy.render(text, &device, &queue, (size.width, size.height), view, true);
+            let texts = vec![
+                // TextRenderable {
+                // text,
+                // color: hex_str_to_normalized_rgba("#af4573"),
+                // scale: 80.0,
+                // },
+                TextRenderable {
+                    text,
+                    color: hex_str_to_normalized_rgba("#fdfead"),
+                    scale: 40.0,
+                },
+                TextRenderable {
+                    text,
+                    color: hex_str_to_normalized_rgba("#fdaaad"),
+                    scale: 20.0,
+                },
+            ];
+
+            glyphy.render(
+                texts,
+                &device,
+                &queue,
+                (size.width, size.height),
+                view,
+                true,
+            );
             frame.present();
         }
         _ => {

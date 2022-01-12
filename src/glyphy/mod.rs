@@ -12,17 +12,40 @@ pub struct Glyphy {
     brush: GlyphBrush<()>,
 }
 
-fn hex_str_to_rgba<'a>(s: &'a str) -> [f32; 4] {
+pub struct TextRenderable<'a> {
+    pub text: &'a str,
+    pub color: [f32; 4],
+    pub scale: f32,
+}
+
+pub fn hex_str_to_rgba<'a>(s: &'a str) -> [f32; 4] {
     let re = regex::Regex::new(r"#([a-fA-F0-9]{6})").unwrap();
     if !re.is_match(s) {
         panic!("{} is not in hex format", s);
     };
 
-    let mut rgba: Vec<f32> = [&s[1..3], &s[3..5], &s[5..7]]
+    let rgb: Vec<f32> = s[1..]
+        .chars()
+        .collect::<Vec<char>>()
+        .chunks(2)
+        .map(|c| c.iter().collect::<String>())
+        .collect::<Vec<String>>()
         .iter()
-        .map(|v| hex::decode(v).unwrap()[0] as f32 / 255.0)
+        .map(|chunk| {
+            hex::decode(chunk)
+                .expect(format!("unable to decode chuck {} in hex {}", chunk.as_str(), s).as_str())
+                [0] as f32
+        })
         .collect();
-    rgba.append(&mut vec![1.0]);
+
+    [rgb[0], rgb[1], rgb[2], 255.0]
+}
+
+pub fn hex_str_to_normalized_rgba<'a>(s: &'a str) -> [f32; 4] {
+    let rgba = hex_str_to_rgba(s)
+        .iter()
+        .map(|v| v / 255.0)
+        .collect::<Vec<f32>>();
 
     [rgba[0], rgba[1], rgba[2], rgba[3]]
 }
@@ -45,6 +68,13 @@ fn test_bad_hex_str_to_rgba_2() {
 fn test_hex_str_to_rgba() {
     let hex_str = "#af4573";
     let rgba = hex_str_to_rgba(hex_str);
+    assert_eq!(rgba, [175.0, 69.0, 115.0, 255.0]);
+}
+
+#[test]
+fn test_hex_str_to_normalized_rgba() {
+    let hex_str = "#af4573";
+    let rgba = hex_str_to_normalized_rgba(hex_str);
     assert_eq!(rgba, [0.6862745, 0.27058825, 0.4509804, 1.0,])
 }
 
@@ -66,9 +96,10 @@ impl Glyphy {
             local_spawner,
         })
     }
+
     pub fn render<'a>(
         &mut self,
-        text: &'a str,
+        texts: Vec<TextRenderable>,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         size: (u32, u32),
@@ -104,20 +135,22 @@ impl Glyphy {
             });
         }
 
-        let hex_str = "#af4573";
-        // ^(0x|0X)?[a-fA-F0-9]+$'
+        let mut offset_y = 0.0;
+        let max_x = texts.iter().max_by_key(|t| t.text.len()).unwrap();
+        let offset_x = max_x.scale * 1.5 * max_x.text.len() as f32;
 
-        // let normalized = [rgb.r / 255.0, rgb.g / 255.0, rgb.b / 255.0 / 0, 1.0];
-        // dbg!(normalized);
+        for (i, text) in texts.iter().enumerate() {
+            self.brush.queue(Section {
+                screen_position: (size.0 as f32 - offset_x as f32, 30.0 + offset_y),
+                bounds: (size.0 as f32, size.1 as f32),
+                text: vec![Text::new(text.text)
+                    .with_color(text.color)
+                    .with_scale(text.scale)],
+                ..Section::default()
+            });
 
-        self.brush.queue(Section {
-            screen_position: (size.0 as f32 - 30.0 * text.len() as f32, 30.0),
-            bounds: (size.0 as f32, size.1 as f32),
-            text: vec![Text::new(text)
-                .with_color(hex_str_to_rgba(hex_str))
-                .with_scale(40.0)],
-            ..Section::default()
-        });
+            offset_y += text.scale
+        }
 
         // Draw the text!
         self.brush
@@ -131,7 +164,7 @@ impl Glyphy {
             )
             .expect("Draw queued");
 
-        // Submit the work!
+        // Submit the work
         self.staging_belt.finish();
         queue.submit(Some(encoder.finish()));
 
